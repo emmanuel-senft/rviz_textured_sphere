@@ -69,9 +69,9 @@ Visualization Manager:
       Enabled: true
       FOV front: 222.5
       FOV rear: 222.5
-      Front camera image: /front_camera/image_raw
+      Front camera image: /camera/image_raw
       Name: SphereDisplay
-      Rear camera image: /rear_camera/image_raw
+      Rear camera image: /camera/image_raw
       Reference frame: <Fixed Frame>
       Transport Hint: raw
       Value: true

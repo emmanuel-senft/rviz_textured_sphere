@@ -71,11 +71,14 @@ SphereDisplay::SphereDisplay()
   : Display()
   , sub_front_()
   , sub_rear_()
+  , sub_third_()
   , sphere_node_(NULL)
   , texture_front_(NULL)
   , texture_rear_(NULL)
+  , texture_third_(NULL)
   , new_front_image_arrived_(false)
   , new_rear_image_arrived_(false)
+  , new_third_image_arrived_(false)
 {
   image_topic_front_property_ = new RosTopicProperty(
       "Front camera image", "",
@@ -99,6 +102,17 @@ SphereDisplay::SphereDisplay()
   connect(rear_transport_property_, SIGNAL(requestOptions(EnumProperty*)), this,
           SLOT(fillTransportOptionList(EnumProperty*)));
 
+  image_topic_third_property_ = new RosTopicProperty(
+      "third camera image", "",
+      QString::fromStdString(ros::message_traits::datatype<sensor_msgs::Image>()),
+      "Image topic of the third camera to subscribe to.", this, SLOT(onImageTopicChanged()));
+
+  third_transport_property_ =
+      new EnumProperty("Transport Hint", "raw", "Preferred method of sending images.", this,
+                       SLOT(onImageTopicChanged()));
+  connect(third_transport_property_, SIGNAL(requestOptions(EnumProperty*)), this,
+          SLOT(fillTransportOptionList(EnumProperty*)));
+
   ref_frame_property_ =
       new TfFrameProperty("Reference frame", "<Fixed Frame>",
                           "Position the sphere relative to this frame.", this, 0, true);
@@ -118,6 +132,9 @@ SphereDisplay::SphereDisplay()
   fov_rear_property_ = new FloatProperty("FOV rear", 235.0, "Rear camera field of view (degrees)", this,
                                          SLOT(onMeshParamChanged()));
 
+  fov_third_property_ = new FloatProperty("FOV third", 235.0, "third camera field of view (degrees)", this,
+                                         SLOT(onMeshParamChanged()));
+
   blend_angle_property_ =
       new FloatProperty("Blend angle", 20, "Specifies the size of a region (in degrees), where two images "
                                            "overlap and are blended together",
@@ -132,7 +149,8 @@ SphereDisplay::SphereDisplay()
   // try to create texture_unit_state
   texture_front_ = new ROSImageTexture();
   texture_rear_ = new ROSImageTexture();
-  if (!texture_front_ || !texture_rear_)
+  texture_third_ = new ROSImageTexture();
+  if (!texture_front_ || !texture_rear_ || !texture_third_)
   {
     ROS_ERROR("Failed to create ROSImageTextures.");
   }
@@ -140,6 +158,7 @@ SphereDisplay::SphereDisplay()
   {
     ROS_INFO("Created new texture: %s", texture_front_->getTexture()->getName().c_str());
     ROS_INFO("Created new texture: %s", texture_rear_->getTexture()->getName().c_str());
+    ROS_INFO("Created new texture: %s", texture_third_->getTexture()->getName().c_str());
   }
 }
 
@@ -149,14 +168,17 @@ SphereDisplay::~SphereDisplay()
   destroySphere();
   delete texture_front_;
   delete texture_rear_;
+  delete texture_third_;
   delete image_topic_front_property_;
   delete image_topic_rear_property_;
+  delete image_topic_third_property_;
   delete ref_frame_property_;
   delete radius_property_;
   delete ring_cnt_property_;
   delete segment_cnt_property_;
   delete fov_front_property_;
   delete fov_rear_property_;
+  delete fov_third_property_;
   delete blend_angle_property_;
   Ogre::ResourceGroupManager::getSingleton().destroyResourceGroup(ROS_PACKAGE_NAME);
 }
@@ -165,6 +187,7 @@ void SphereDisplay::onInitialize()
 {
   it_front_.reset(new image_transport::ImageTransport(nh_));
   it_rear_.reset(new image_transport::ImageTransport(nh_));
+  it_third_.reset(new image_transport::ImageTransport(nh_));
   ref_frame_property_->setFrameManager(context_->getFrameManager());
   createSphere();
   scanForTransportSubscriberPlugins();
@@ -251,6 +274,7 @@ Ogre::MeshPtr SphereDisplay::createSphereMesh(const std::string& mesh_name, cons
   float delta_segment_angle = 2 * M_PI / segment_cnt;
   float front_lens_fov = angles::from_degrees(fov_front_property_->getFloat());
   float rear_lens_fov = angles::from_degrees(fov_rear_property_->getFloat());
+  float third_lens_fov = angles::from_degrees(fov_third_property_->getFloat());
   float blend_angle = angles::from_degrees(blend_angle_property_->getFloat());
   unsigned short vertex_index = 0;
 
@@ -273,13 +297,18 @@ Ogre::MeshPtr SphereDisplay::createSphereMesh(const std::string& mesh_name, cons
 
       // Scale and scroll textures so that their centers will align
       // with the top and bottom centers of the sphere
-      float scale_front = M_PI / front_lens_fov;
+      float scale_front = M_PI / front_lens_fov * 3. / 2.;
       float v_front = uv_r0 * cos(u_angle) * 0.5 * scale_front + 0.5;
       float u_front = -uv_r0 * sin(u_angle) * 0.5 * scale_front + 0.5;
 
-      float scale_rear = M_PI / rear_lens_fov;
+      float scale_rear = M_PI / rear_lens_fov * 3. / 2.;
       float v_rear = (2 - uv_r0) * cos(u_angle) * 0.5 * scale_rear + 0.5;
       float u_rear = (2 - uv_r0) * sin(u_angle) * 0.5 * scale_rear + 0.5;
+
+      //not sure..
+      float scale_third = M_PI / third_lens_fov * 2. / 3.;
+      float v_third = (2 - uv_r0) * cos(u_angle) * 0.5 * scale_third + 0.5;
+      float u_third = (2 - uv_r0) * sin(u_angle) * 0.5 * scale_third + 0.5;
 
       // Use diffuse color to alpha blend front and back images at the predefined blending region
       float blend_alpha = (v_angle - M_PI_2 + blend_angle / 2) / blend_angle;
@@ -303,6 +332,10 @@ Ogre::MeshPtr SphereDisplay::createSphereMesh(const std::string& mesh_name, cons
       // TexCoord 1 (rear image)
       *vertex++ = u_rear;
       *vertex++ = v_rear;
+
+      // TexCoord 1 (third image)
+      //*vertex++ = u_third;
+      //*vertex++ = v_third;
 
       // Set diffuse color for alpha blending
       *vertex++ = blend_alpha;  // r
@@ -369,8 +402,10 @@ void SphereDisplay::fillTransportOptionList(EnumProperty* enum_property)
 {
   // get the topic based on the sender
   const std::string& topic = (enum_property == front_transport_property_) ?
-                                 image_topic_front_property_->getStdString() :
-                                 image_topic_rear_property_->getStdString();
+                                 image_topic_front_property_->getStdString() : (
+			     (enum_property == rear_transport_property_) ?	
+                                 image_topic_rear_property_->getStdString() : 
+                                 image_topic_third_property_->getStdString()) ;
 
   enum_property->clearOptions();
   std::vector<std::string> choices;
@@ -423,6 +458,12 @@ void SphereDisplay::updateRearCameraImage(const sensor_msgs::Image::ConstPtr& im
   new_rear_image_arrived_ = true;
 }
 
+void SphereDisplay::updatethirdCameraImage(const sensor_msgs::Image::ConstPtr& image)
+{
+  cur_image_third_ = image;
+  new_third_image_arrived_ = true;
+}
+
 void SphereDisplay::onImageTopicChanged()
 {
   unsubscribe();
@@ -447,6 +488,7 @@ void SphereDisplay::subscribe()
   const uint32_t queue_size = 1;
   sub_front_.reset(new image_transport::SubscriberFilter());
   sub_rear_.reset(new image_transport::SubscriberFilter());
+  sub_third_.reset(new image_transport::SubscriberFilter());
 
   if (!image_topic_front_property_->getTopicStd().empty() &&
       !front_transport_property_->getStdString().empty())
@@ -488,7 +530,29 @@ void SphereDisplay::subscribe()
     }
     catch (image_transport::Exception& e)
     {
-      setStatus(StatusProperty::Error, "Front camera image",
+      setStatus(StatusProperty::Error, "Rear camera image",
+                QString("Error subscribing: ") + e.what());
+    }
+  }
+
+  if (!image_topic_third_property_->getTopicStd().empty() &&
+      !third_transport_property_->getStdString().empty())
+  {
+    try
+    {
+      sub_third_->subscribe(
+          *it_third_, image_topic_third_property_->getTopicStd(), queue_size,
+          image_transport::TransportHints(third_transport_property_->getStdString()));
+      sub_third_->registerCallback(boost::bind(&SphereDisplay::updatethirdCameraImage, this, _1));
+    }
+    catch (ros::Exception& e)
+    {
+      setStatus(StatusProperty::Error, "third camera image",
+                QString("Error subscribing: ") + e.what());
+    }
+    catch (image_transport::Exception& e)
+    {
+      setStatus(StatusProperty::Error, "third camera image",
                 QString("Error subscribing: ") + e.what());
     }
   }
@@ -498,6 +562,7 @@ void SphereDisplay::unsubscribe()
 {
   sub_front_.reset(new image_transport::SubscriberFilter());
   sub_rear_.reset(new image_transport::SubscriberFilter());
+  sub_third_.reset(new image_transport::SubscriberFilter());
 }
 
 void SphereDisplay::onEnable()

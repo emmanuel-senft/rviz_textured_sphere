@@ -112,6 +112,7 @@ private:
   void scanForTransportSubscriberPlugins();
   void updateFrontCameraImage(const sensor_msgs::Image::ConstPtr& image);
   void updateRearCameraImage(const sensor_msgs::Image::ConstPtr& image);
+  void updatethirdCameraImage(const sensor_msgs::Image::ConstPtr& image);
   void createSphere();
   Ogre::MeshPtr createSphereMesh(const std::string& mesh_name, const double r,
                                  const unsigned int ring_cnt, const unsigned int segment_cnt);
@@ -124,19 +125,24 @@ private:
   EnumProperty* front_transport_property_;
   RosTopicProperty* image_topic_rear_property_;
   EnumProperty* rear_transport_property_;
+  RosTopicProperty* image_topic_third_property_;
+  EnumProperty* third_transport_property_;
   TfFrameProperty* ref_frame_property_;
   FloatProperty* radius_property_;
   IntProperty* ring_cnt_property_;
   IntProperty* segment_cnt_property_;
   FloatProperty* fov_front_property_;
   FloatProperty* fov_rear_property_;
+  FloatProperty* fov_third_property_;
   FloatProperty* blend_angle_property_;
 
   // Image transport
   std::unique_ptr<image_transport::ImageTransport> it_front_;
   std::unique_ptr<image_transport::ImageTransport> it_rear_;
+  std::unique_ptr<image_transport::ImageTransport> it_third_;
   std::shared_ptr<image_transport::SubscriberFilter> sub_front_;
   std::shared_ptr<image_transport::SubscriberFilter> sub_rear_;
+  std::shared_ptr<image_transport::SubscriberFilter> sub_third_;
   std::set<std::string> transport_plugin_types_;
 
   // Ogre and textures
@@ -144,12 +150,15 @@ private:
   Ogre::MaterialPtr sphere_material_;
   ROSImageTexture* texture_front_;  // Texture for front camera image
   ROSImageTexture* texture_rear_;   // Texture for rear camera image
+  ROSImageTexture* texture_third_;   // Texture for third camera image
   RenderPanel* render_panel_;       // this is the active render panel
 
   bool new_front_image_arrived_;
   bool new_rear_image_arrived_;
+  bool new_third_image_arrived_;
   sensor_msgs::Image::ConstPtr cur_image_front_;
   sensor_msgs::Image::ConstPtr cur_image_rear_;
+  sensor_msgs::Image::ConstPtr cur_image_third_;
   ros::NodeHandle nh_;
 };
 
